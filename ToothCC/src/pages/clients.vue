@@ -145,7 +145,7 @@ onMounted(() => {
     });
 
   // Set up WebSocket connection
-  ws = new WebSocket("ws://localhost:8080");
+  ws = new WebSocket("ws://localhost:80");
   ws.onmessage = (event) => {
     clients.value = JSON.parse(event.data).map((client, index) => ({
       id: index + 1,

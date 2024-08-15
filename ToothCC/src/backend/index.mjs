@@ -5,7 +5,8 @@ import { WebSocketServer } from "ws";
 import sqlite3 from "sqlite3";
 import { open } from "sqlite";
 
-const port = 8000;
+const apiPort = 8000;
+const wsPort = 80;
 const app = express();
 
 app.use(cors());
@@ -17,7 +18,7 @@ const wsClients = [];
 
 // Initialize SQLite database
 const dbPromise = open({
-  filename: "./clients.db",
+  filename: "./toothpick.db",
   driver: sqlite3.Database,
 });
 
@@ -27,14 +28,21 @@ async function initializeDatabase() {
     CREATE TABLE IF NOT EXISTS clients (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       address TEXT,
+      port INTEGER, 
       lastActivity INTEGER
+    )
+  `);
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS listeners (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      port INTEGER
     )
   `);
 }
 
 initializeDatabase();
 
-const wss = new WebSocketServer({ port: 8080 });
+const wss = new WebSocketServer({ port: wsPort });
 
 wss.on("connection", (ws) => {
   wsClients.push(ws);
@@ -56,7 +64,7 @@ app.get("/api/v1/clients", async (_req, res) => {
   const now = Date.now();
   const clientList = rows.map((client) => ({
     address: client.address,
-    status: now - client.lastActivity < 30000 ? "Active" : "Offline", // 30 seconds threshold
+    status: now - client.lastActivity < 65000 ? "Active" : "Offline", // 65 seconds threshold
   }));
   res.json(clientList);
 });
@@ -102,11 +110,17 @@ function sendCommandToClient(client, command) {
 
       if (response.endsWith("\n")) {
         const trimmedResponse = response.trim();
+        try {
+          const jsonResponse = JSON.parse(trimmedResponse);
 
-        if (trimmedResponse === "ping") {
-          response = "";
-        } else {
-          resolve(trimmedResponse);
+          if (jsonResponse.message === "ping") {
+            response = "";
+          } else {
+            resolve(jsonResponse);
+          }
+        } catch (error) {
+          console.error("Failed to parse JSON response:", error);
+          reject("Invalid JSON response");
         }
       }
     });
@@ -157,10 +171,16 @@ async function startNewServer(port, res) {
 
     let client = clients.find((c) => c.address.startsWith(clientIP));
     if (client) {
-      client.address = clientAddress;
+      client.address = clientIP; // Only save the IP part
+      client.port = clientPort;
       client.lastActivity = Date.now();
     } else {
-      client = { address: clientAddress, lastActivity: Date.now(), socket };
+      client = {
+        address: clientIP, // Only save the IP part
+        port: clientPort,
+        lastActivity: Date.now(),
+        socket,
+      };
       clients.push(client);
     }
 
@@ -194,8 +214,9 @@ async function startNewServer(port, res) {
     });
   });
 
-  currentServer.listen(port, () => {
+  currentServer.listen(port, async () => {
     console.log(`TCP server listening on port ${port}`);
+    await saveListenerToDatabase(port); // Save the listener to the database
     res.json({ message: `TCP server started on port ${port}` });
   });
 
@@ -207,18 +228,38 @@ async function startNewServer(port, res) {
 
 async function saveClientToDatabase(client) {
   const db = await dbPromise;
-  await db.run(
-    "INSERT INTO clients (address, lastActivity) VALUES (?, ?)",
-    client.address,
-    client.lastActivity
+  const existingClient = await db.get(
+    "SELECT id FROM clients WHERE address = ?",
+    client.address
   );
+
+  if (existingClient) {
+    await db.run(
+      "UPDATE clients SET port = ?, lastActivity = ? WHERE address = ?",
+      client.port,
+      client.lastActivity,
+      client.address
+    );
+  } else {
+    await db.run(
+      "INSERT INTO clients (address, port, lastActivity) VALUES (?, ?, ?)",
+      client.address,
+      client.port,
+      client.lastActivity
+    );
+  }
+}
+async function saveListenerToDatabase(port) {
+  const db = await dbPromise;
+  await db.run("INSERT INTO listeners (port) VALUES (?)", port);
 }
 
 async function updateClientActivityInDatabase(client) {
   const db = await dbPromise;
   await db.run(
-    "UPDATE clients SET lastActivity = ? WHERE address = ?",
+    "UPDATE clients SET lastActivity = ?, port = ? WHERE address = ?",
     client.lastActivity,
+    client.port,
     client.address
   );
 }
@@ -227,7 +268,7 @@ function broadcastClients() {
   const now = Date.now();
   const clientList = clients.map((client) => ({
     address: client.address,
-    status: now - client.lastActivity < 60000 ? "Active" : "Offline", // 60 seconds threshold
+    status: now - client.lastActivity < 65000 ? "Active" : "Offline", // 60 seconds threshold
   }));
   const data = JSON.stringify(clientList);
   wsClients.forEach((ws) => {
@@ -237,6 +278,7 @@ function broadcastClients() {
   });
 }
 
-app.listen(port, () => {
-  console.log("HTTP server listening on port", port);
+app.listen(apiPort, () => {
+  console.log("API server listening on port", apiPort);
+  console.log("WebSocket server listening on port", wsPort);
 });
