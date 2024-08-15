@@ -15,6 +15,13 @@
       </v-list-item>
       <v-list-item
         link
+        @click="navigateTo('clients')"
+        :class="{ 'v-list-item--active': currentView === 'clients' }"
+      >
+        <v-list-item-title>Clients</v-list-item-title>
+      </v-list-item>
+      <v-list-item
+        link
         @click="navigateTo('Tasks')"
         :class="{ 'v-list-item--active': currentView === 'tasks' }"
       >

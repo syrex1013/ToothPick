@@ -1,0 +1,9 @@
+@font-face {
+  font-family: 'TT Mussels';
+  src:
+    url(./fonts/TT-Mussels-c8da8482518b3cc4a0c88831d094a004.woff2) format('woff2'),
+    url(./fonts/TT-Mussels-896b42d54b77138ef3dca8b617c32d0a.woff) format('woff');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
