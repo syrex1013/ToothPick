@@ -30,21 +30,19 @@ const powershellCommand = `powershell -EncodedCommand ${encodedPingScriptBase64}
 
 // Process command line arguments
 const args = process.argv.slice(2);
-const createBatFile = args.includes("-b");
-const verbose = args.includes("-v");
+const batFileFlag = args.includes("-b");
+const commandFlag = args.includes("-c");
 
 // If -b flag is set, save the command as a .bat file
-if (createBatFile) {
+if (batFileFlag) {
   const batFilePath = path.join(__dirname, "toothpick.bat");
   fs.writeFileSync(batFilePath, powershellCommand);
-  if (verbose) {
-    console.log(`Saved PowerShell command to ${batFilePath}`);
-  }
-} else if (verbose) {
+  console.log(`Saved .bat command to ${batFilePath}`);
+} else if (commandFlag) {
   console.log("Generated PowerShell command:");
   console.log(powershellCommand);
 } else {
   console.log(
-    "You need to use the -b flag to create the .bat file or the -v flag to print the command."
+    "Specify -b to save the command as a .bat file or -c to print the command to the console."
   );
 }

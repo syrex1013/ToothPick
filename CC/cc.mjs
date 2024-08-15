@@ -25,9 +25,11 @@ const server = net.createServer((socket) => {
   });
 
   socket.on("data", (data) => {
-    console.log(
-      chalk.yellow(`Client ${socket.id} says: ${data.toString().trim()}`)
-    );
+    if (data.toString().trim() !== "ping") {
+      console.log(
+        chalk.yellow(`Client ${socket.id} says: ${data.toString().trim()}`)
+      );
+    }
   });
 
   socket.on("error", (err) => {
