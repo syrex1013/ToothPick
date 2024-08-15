@@ -1,6 +1,6 @@
 # Define the server IP and port to connect to
 $serverIP = "127.0.0.1"
-$serverPort = 8080
+$serverPort = 1234
 
 # Config
 $sleeptime = 60
