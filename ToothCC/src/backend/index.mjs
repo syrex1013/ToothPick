@@ -2,6 +2,8 @@ import express from "express";
 import net from "net";
 import cors from "cors";
 import { WebSocketServer } from "ws";
+import sqlite3 from "sqlite3";
+import { open } from "sqlite";
 
 const port = 8000;
 const app = express();
@@ -12,6 +14,25 @@ app.use(express.json());
 let currentServer = null;
 const clients = [];
 const wsClients = [];
+
+// Initialize SQLite database
+const dbPromise = open({
+  filename: "./clients.db",
+  driver: sqlite3.Database,
+});
+
+async function initializeDatabase() {
+  const db = await dbPromise;
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS clients (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      address TEXT,
+      lastActivity INTEGER
+    )
+  `);
+}
+
+initializeDatabase();
 
 const wss = new WebSocketServer({ port: 8080 });
 
@@ -29,9 +50,11 @@ app.get("/api/v1/hello", (_req, res) => {
   res.json({ message: "Hello, world!" });
 });
 
-app.get("/api/v1/clients", (_req, res) => {
+app.get("/api/v1/clients", async (_req, res) => {
+  const db = await dbPromise;
+  const rows = await db.all("SELECT address, lastActivity FROM clients");
   const now = Date.now();
-  const clientList = clients.map((client) => ({
+  const clientList = rows.map((client) => ({
     address: client.address,
     status: now - client.lastActivity < 30000 ? "Active" : "Offline", // 30 seconds threshold
   }));
@@ -60,7 +83,6 @@ app.post("/api/v1/sendCommand", (req, res) => {
     return res.status(404).json({ error: "Client not found" });
   }
 
-  // Assuming you have a way to send the command to the client and get the output
   sendCommandToClient(client, command)
     .then((output) => {
       res.json({ output });
@@ -70,33 +92,29 @@ app.post("/api/v1/sendCommand", (req, res) => {
       res.status(500).json({ error: "Failed to send command" });
     });
 });
+
 function sendCommandToClient(client, command) {
   return new Promise((resolve, reject) => {
     let response = "";
 
-    // Listen for data from the client
     client.socket.on("data", (data) => {
       response += data.toString();
 
-      // Assuming the response ends with a newline character
       if (response.endsWith("\n")) {
         const trimmedResponse = response.trim();
 
-        // Check if the response is "ping"
         if (trimmedResponse === "ping") {
-          response = ""; // Reset the response and wait for the next one
+          response = "";
         } else {
           resolve(trimmedResponse);
         }
       }
     });
 
-    // Handle socket errors
     client.socket.on("error", (err) => {
       reject(err);
     });
 
-    // Send the command to the client
     client.socket.write(command + "\n", (err) => {
       if (err) {
         reject(err);
@@ -125,7 +143,7 @@ function closeServerAndClients(callback) {
   }
 }
 
-function startNewServer(port, res) {
+async function startNewServer(port, res) {
   currentServer = net.createServer((socket) => {
     const clientIP = socket.remoteAddress;
     const clientPort = socket.remotePort;
@@ -142,10 +160,12 @@ function startNewServer(port, res) {
 
     console.log("Client connected:", clientAddress);
     broadcastClients();
+    saveClientToDatabase(client);
 
     socket.on("data", (data) => {
       console.log("Received data:", data.toString());
       client.lastActivity = Date.now();
+      updateClientActivityInDatabase(client);
     });
 
     socket.on("end", () => {
@@ -176,6 +196,24 @@ function startNewServer(port, res) {
     console.error("Server error:", err);
     res.status(500).json({ error: "Failed to start TCP server" });
   });
+}
+
+async function saveClientToDatabase(client) {
+  const db = await dbPromise;
+  await db.run(
+    "INSERT INTO clients (address, lastActivity) VALUES (?, ?)",
+    client.address,
+    client.lastActivity
+  );
+}
+
+async function updateClientActivityInDatabase(client) {
+  const db = await dbPromise;
+  await db.run(
+    "UPDATE clients SET lastActivity = ? WHERE address = ?",
+    client.lastActivity,
+    client.address
+  );
 }
 
 function broadcastClients() {
