@@ -17,12 +17,14 @@
       <v-card-title>Send New Task</v-card-title>
       <v-card-text>
         <v-form @submit.prevent="sendTask">
-          <v-text-field
-            v-model="newTask.id"
-            label="Client ID"
-            type="number"
+          <v-select
+            v-model="selectedClient"
+            :items="clients"
+            item-text="address"
+            item-value="address"
+            label="Select Client"
             required
-          ></v-text-field>
+          ></v-select>
           <v-text-field
             v-model="newTask.task"
             label="Task"
@@ -36,7 +38,8 @@
 </template>
 
 <script setup>
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
+import axios from "axios";
 
 const headers = [
   { title: "ID", value: "id" },
@@ -53,8 +56,25 @@ const tasks = ref([
 ]);
 
 const newTask = ref({
-  id: "",
   task: "",
+});
+
+const clients = ref([]);
+const selectedClient = ref(null);
+
+onMounted(() => {
+  axios
+    .get("http://localhost:8000/api/v1/clients")
+    // .then((response) => {
+    //   clients.value = response.data.map(
+    //     (client, index) => `Client ${index} - ${client.address}`
+    //   );
+    .then((response) => {
+      clients.value = response.data.map((client, index) => client.address);
+    })
+    .catch((error) => {
+      console.error("Error fetching clients:", error);
+    });
 });
 
 function getStatusColor(status) {
@@ -71,17 +91,22 @@ function getStatusColor(status) {
 }
 
 function sendTask() {
-  if (newTask.value.id && newTask.value.task) {
+  if (selectedClient.value && newTask.value.task) {
     // Add the new task to the tasks array
     tasks.value.push({
-      id: newTask.value.id,
-      ip: `192.168.1.${newTask.value.id}`, // Example IP generation
+      id: tasks.value.length + 1,
+      ip: selectedClient.value,
       status: "Pending",
       task: newTask.value.task,
     });
 
+    // Send message (task) to client
+    axios.post("http://localhost:8000/api/v1/sendCommand", {
+      address: selectedClient.value,
+      command: newTask.value.task,
+    });
     // Clear the form
-    newTask.value.id = "";
+    selectedClient.value = null;
     newTask.value.task = "";
   }
 }
