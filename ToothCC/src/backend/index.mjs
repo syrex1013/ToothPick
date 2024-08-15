@@ -145,8 +145,14 @@ function closeServerAndClients(callback) {
 
 async function startNewServer(port, res) {
   currentServer = net.createServer((socket) => {
-    const clientIP = socket.remoteAddress;
+    let clientIP = socket.remoteAddress;
     const clientPort = socket.remotePort;
+
+    // Remove the ::ffff: prefix if it exists
+    if (clientIP.startsWith("::ffff:")) {
+      clientIP = clientIP.replace("::ffff:", "");
+    }
+
     const clientAddress = `${clientIP}:${clientPort}`;
 
     let client = clients.find((c) => c.address.startsWith(clientIP));
@@ -166,6 +172,7 @@ async function startNewServer(port, res) {
       console.log("Received data:", data.toString());
       client.lastActivity = Date.now();
       updateClientActivityInDatabase(client);
+      broadcastClients();
     });
 
     socket.on("end", () => {

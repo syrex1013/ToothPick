@@ -35,7 +35,11 @@ const commandFlag = args.includes("-c");
 
 // If -b flag is set, save the command as a .bat file
 if (batFileFlag) {
-  const batFilePath = path.join(__dirname, "toothpick.bat");
+  const batFilePath = path.join(__dirname, "build", "toothpick.bat");
+  //create folder if not exists
+  if (!fs.existsSync(path.join(__dirname, "build"))) {
+    fs.mkdirSync(path.join(__dirname, "build"));
+  }
   fs.writeFileSync(batFilePath, powershellCommand);
   console.log(`Saved .bat command to ${batFilePath}`);
 } else if (commandFlag) {
