@@ -5,7 +5,8 @@
 - [About](#about)
 - [Getting Started](#getting_started)
 - [Usage](#usage)
-- [Contributing](../CONTRIBUTING.md)
+- [Incoming Features](#incoming-features)
+- [Why?](#goal)
 
 ## About <a name = "about"></a>
 
@@ -54,3 +55,17 @@ After that you can run builder.js like this:
 ```
 node builder.js -b
 ```
+
+## Incoming Features <a name = "incoming"></a>
+
+- WebUI built in Node/Vue/Vuetify - **_Working at it currently_**
+- Fileless persistance Mechanism in registry
+- Encrypted Communications
+- Hibernation & RealTime communication modes
+- and More!
+
+## Why? <a name="goal"></a>
+
+The objective of this project is to develop a fileless Remote Access Trojan (RAT) or botnet designed specifically for use in red team engagements. This tool will provide cybersecurity professionals with a highly effective means to test the security posture of an organization. The key focus is to ensure that the tool leaves a minimal footprint, maintaining stealth while offering a comprehensive suite of features to facilitate thorough penetration testing.
+
+Many (well 3) professional solutions right now, leave big footprint at the target PC during tests, and no tool that I used in my experience uses TRUE fileless mechanisms.
