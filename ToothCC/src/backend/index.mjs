@@ -1,11 +1,14 @@
 import express from "express";
 import net from "net";
 import cors from "cors";
-import { WebSocketServer } from "ws";
 import * as db from "./database.mjs";
+import {
+  startWebSocketServer,
+  broadcastClients,
+  broadcastTaskUpdate,
+} from "./websocketServer.mjs";
 
 const apiPort = 8000;
-const wsPort = 80;
 const app = express();
 
 app.use(cors());
@@ -13,21 +16,9 @@ app.use(express.json());
 
 let currentServer = null;
 const clients = [];
-const wsClients = [];
 
 db.initializeDatabase();
-
-const wss = new WebSocketServer({ port: wsPort });
-
-wss.on("connection", (ws) => {
-  wsClients.push(ws);
-  ws.on("close", () => {
-    const index = wsClients.indexOf(ws);
-    if (index !== -1) {
-      wsClients.splice(index, 1);
-    }
-  });
-});
+startWebSocketServer();
 
 app.get("/api/v1/tasks", async (_req, res) => {
   const rows = await db.getAllTasks();
@@ -61,7 +52,7 @@ app.get("/api/v1/clients", async (_req, res) => {
   const now = Date.now();
   const clientList = rows.map((client) => ({
     address: client.address,
-    status: now - client.lastActivity < 65000 ? "Active" : "Offline", // 65 seconds threshold
+    status: now - client.lastActivity < 65000 ? "Active" : "Offline",
   }));
   res.json(clientList);
 });
@@ -105,7 +96,7 @@ async function sendPendingTasks(client) {
   console.log("Client address:", client.address);
   for (const task of pendingTasks) {
     try {
-      const output = await sendCommandToClient(client, task.task);
+      const output = await sendCommandToClient(client, task);
       await db.updateTaskOutputById(output, "Completed", task.id);
     } catch (error) {
       console.error("Failed to send pending task:", error);
@@ -114,7 +105,7 @@ async function sendPendingTasks(client) {
   }
 }
 
-function sendCommandToClient(client, command) {
+function sendCommandToClient(client, task) {
   return new Promise((resolve, reject) => {
     let response = "";
 
@@ -132,17 +123,17 @@ function sendCommandToClient(client, command) {
             console.log("Received output from client:", jsonResponse.message); // Log the received output
 
             // Update the database
-            await db.updateTaskOutput(
+            await db.updateTaskOutputById(
               jsonResponse.message,
               "Completed",
-              client.address,
-              command
+              task.id
             );
 
             // Broadcast the updated task to all WebSocket clients
             broadcastTaskUpdate(
+              task.id,
               client.address,
-              command,
+              task.task,
               "Completed",
               jsonResponse.message
             );
@@ -160,7 +151,7 @@ function sendCommandToClient(client, command) {
       reject(err);
     });
 
-    client.socket.write(command + "\n", (err) => {
+    client.socket.write(task.task + "\n", (err) => {
       if (err) {
         reject(err);
       }
@@ -187,9 +178,11 @@ function closeServerAndClients(callback) {
     callback();
   }
 }
+
 async function updateClientModeInDatabase(client, mode) {
   await db.updateClientMode(client.address, mode);
 }
+
 async function startNewServer(port, res) {
   currentServer = net.createServer((socket) => {
     let clientIP = socket.remoteAddress;
@@ -217,7 +210,7 @@ async function startNewServer(port, res) {
     }
 
     console.log("Client connected:", clientAddress);
-    broadcastClients();
+    broadcastClients(clients);
     db.saveClientToDatabase(client);
     sendPendingTasks(client); // Send any pending tasks to the client
 
@@ -236,7 +229,7 @@ async function startNewServer(port, res) {
         return;
       }
       db.updateClientActivity(client);
-      broadcastClients();
+      broadcastClients(clients);
     });
 
     socket.on("end", () => {
@@ -245,7 +238,7 @@ async function startNewServer(port, res) {
       if (index !== -1) {
         clients.splice(index, 1);
       }
-      broadcastClients();
+      broadcastClients(clients);
     });
 
     socket.on("error", (err) => {
@@ -254,7 +247,7 @@ async function startNewServer(port, res) {
       if (index !== -1) {
         clients.splice(index, 1);
       }
-      broadcastClients();
+      broadcastClients(clients);
     });
   });
 
@@ -270,35 +263,6 @@ async function startNewServer(port, res) {
   });
 }
 
-function broadcastClients() {
-  const now = Date.now();
-  const clientList = clients.map((client) => ({
-    address: client.address,
-    status: now - client.lastActivity < 65000 ? "Active" : "Offline",
-  }));
-  const data = JSON.stringify(clientList);
-  wsClients.forEach((ws) => {
-    if (ws.readyState === ws.OPEN) {
-      ws.send(data);
-    }
-  });
-}
-function broadcastTaskUpdate(ip, task, status, output) {
-  const updatedTask = JSON.stringify({
-    ip,
-    task,
-    status,
-    output,
-  });
-
-  wsClients.forEach((ws) => {
-    if (ws.readyState === ws.OPEN) {
-      ws.send(updatedTask);
-    }
-  });
-}
-
 app.listen(apiPort, () => {
   console.log("API server listening on port", apiPort);
-  console.log("WebSocket server listening on port", wsPort);
 });

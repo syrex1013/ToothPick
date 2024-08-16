@@ -2,6 +2,14 @@
   <v-container>
     <v-card>
       <v-card-title>Previous Tasks</v-card-title>
+      <v-alert
+        v-if="alertMessage"
+        :type="alertType"
+        dismissible
+        @input="alertMessage = ''"
+      >
+        {{ alertMessage }}
+      </v-alert>
       <v-card-text>
         <v-data-table :headers="headers" :items="tasks" class="elevation-1">
           <template v-slot:item.status="{ item }">
@@ -41,7 +49,6 @@
         </v-form>
       </v-card-text>
     </v-card>
-
     <!-- Dialog to display task output -->
     <v-dialog v-model="dialog" max-width="500">
       <v-card>
@@ -63,7 +70,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import axios from "axios";
 
 const headers = [
@@ -80,35 +87,30 @@ const selectedClient = ref(null);
 const newTask = ref({ task: "" });
 const dialog = ref(false);
 const taskOutput = ref("");
+const alertMessage = ref("");
+const alertType = ref("success");
 
+let ws;
 onMounted(() => {
   fetchTasks();
   fetchClients();
   setupWebSocket();
 });
-
 function setupWebSocket() {
-  const socket = new WebSocket("ws://localhost:80");
-
-  socket.onmessage = (event) => {
+  ws = new WebSocket("ws://localhost:80");
+  ws.onmessage = (event) => {
     const updatedTask = JSON.parse(event.data);
-
-    // Find the task by IP and command (task) and update it
-    const index = tasks.value.findIndex(
-      (task) => task.ip === updatedTask.ip && task.task === updatedTask.task
-    );
-
+    const index = tasks.value.findIndex((task) => task.id === updatedTask.id);
     if (index !== -1) {
+      console.log("Updating task:", updatedTask);
       tasks.value[index].status = updatedTask.status;
       tasks.value[index].output = updatedTask.output;
     }
   };
-
-  socket.onclose = () => {
-    console.error("WebSocket connection closed");
+  ws.onclose = (event) => {
+    console.error("WebSocket closed:", event);
   };
-
-  socket.onerror = (error) => {
+  ws.onerror = (error) => {
     console.error("WebSocket error:", error);
   };
 }
@@ -121,6 +123,8 @@ function fetchTasks() {
     })
     .catch((error) => {
       console.error("Error fetching tasks:", error);
+      alertMessage.value = "Error fetching tasks: " + error.message;
+      alertType.value = "error";
     });
 }
 
@@ -132,6 +136,8 @@ function fetchClients() {
     })
     .catch((error) => {
       console.error("Error fetching clients:", error);
+      alertMessage.value = "Error fetching clients: " + error.message;
+      alertType.value = "error";
     });
 }
 
@@ -155,7 +161,6 @@ function sendTask() {
       task: newTask.value.task,
       status: "Pending",
     };
-
     axios
       .post("http://localhost:8000/api/v1/tasks", task)
       .then(() => {
@@ -165,6 +170,8 @@ function sendTask() {
       })
       .catch((error) => {
         console.error("Error sending task:", error);
+        alertMessage.value = "Error sending task: " + error.message;
+        alertType.value = "error";
       });
   }
 }
@@ -177,6 +184,8 @@ function deleteTask(id) {
     })
     .catch((error) => {
       console.error("Error deleting task:", error);
+      alertMessage.value = "Error deleting task: " + error.message;
+      alertType.value = "error";
     });
 }
 
@@ -189,8 +198,15 @@ function viewTaskOutput(id) {
     })
     .catch((error) => {
       console.error("Error fetching task output:", error);
+      alertMessage.value = "Error fetching task output: " + error.message;
+      alertType.value = "error";
     });
 }
+onUnmounted(() => {
+  if (ws) {
+    ws.close();
+  }
+});
 </script>
 
 <style scoped>

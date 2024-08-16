@@ -22,8 +22,8 @@
       </v-list-item>
       <v-list-item
         link
-        @click="navigateTo('Tasks')"
-        :class="{ 'v-list-item--active': currentView === 'Tasks' }"
+        @click="navigateTo('tasks')"
+        :class="{ 'v-list-item--active': currentView === 'tasks' }"
       >
         <v-list-item-title>Tasks</v-list-item-title>
       </v-list-item>

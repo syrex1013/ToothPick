@@ -2,6 +2,14 @@
   <v-container>
     <v-card>
       <v-card-title>Client Data</v-card-title>
+      <v-alert
+        v-if="alertMessage"
+        :type="alertType"
+        dismissible
+        @input="alertMessage = ''"
+      >
+        {{ alertMessage }}
+      </v-alert>
       <v-card-text>
         <v-data-table
           :headers="headers"
@@ -70,6 +78,8 @@ const selectedClient = ref(null);
 const command = ref("");
 const output = ref("");
 const waitingForResponse = ref(false);
+const alertMessage = ref("");
+const alertType = ref("success");
 
 function getStatusColor(status) {
   switch (status) {
@@ -94,16 +104,13 @@ function toggleSelect(address) {
 
 function sendCommand() {
   if (!selectedClient.value || !command.value) return;
-
   const client = clients.value.find(
     (client) => client.address === selectedClient.value
   );
   if (client) {
     client.status = "Executing task...";
   }
-
   waitingForResponse.value = true;
-
   axios
     .post("http://localhost:8000/api/v1/sendCommand", {
       address: selectedClient.value,
@@ -117,6 +124,8 @@ function sendCommand() {
     })
     .catch((error) => {
       console.error("Error sending command:", error);
+      alertMessage.value = "Error sending command: " + error.message;
+      alertType.value = "error";
       if (client) {
         client.status = "Active"; // or handle the error status
       }
@@ -142,6 +151,8 @@ onMounted(() => {
     })
     .catch((error) => {
       console.error("Error fetching clients:", error);
+      alertMessage.value = "Error fetching clients: " + error.message;
+      alertType.value = "error";
     });
 
   // Set up WebSocket connection
