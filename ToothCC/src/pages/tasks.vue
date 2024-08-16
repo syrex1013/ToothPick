@@ -82,6 +82,7 @@ const headers = [
   { title: "ID", value: "id" },
   { title: "IP", value: "ip" },
   { title: "Task", value: "task" },
+  { title: "Parameter", value: "parameter" },
   { title: "Status", value: "status" },
   { title: "Actions", value: "actions", sortable: false },
 ];
@@ -126,6 +127,7 @@ function fetchTasks() {
   axios
     .get("http://localhost:8000/api/v1/tasks")
     .then((response) => {
+      console.log(response.data);
       tasks.value = response.data;
     })
     .catch((error) => {

@@ -23,14 +23,8 @@
               item.status
             }}</v-chip>
           </template>
-          <template v-slot:item="{ item, select }">
+          <template v-slot:item="{ item }">
             <tr>
-              <td>
-                <v-checkbox
-                  :input-value="selectedClient === item.address"
-                  @click="toggleSelect(item.address)"
-                ></v-checkbox>
-              </td>
               <td>{{ item.id }}</td>
               <td>{{ item.address }}</td>
               <td>
@@ -42,20 +36,6 @@
             </tr>
           </template>
         </v-data-table>
-        <v-form @submit.prevent="sendCommand">
-          <v-text-field
-            v-model="command"
-            label="Command"
-            :disabled="!selectedClient || waitingForResponse"
-          ></v-text-field>
-          <v-btn type="submit" :disabled="!selectedClient || waitingForResponse"
-            >Send Command</v-btn
-          >
-        </v-form>
-        <v-card v-if="output">
-          <v-card-title>Output</v-card-title>
-          <v-card-text>{{ output }}</v-card-text>
-        </v-card>
       </v-card-text>
     </v-card>
   </v-container>
@@ -66,7 +46,6 @@ import { ref, onMounted, onUnmounted } from "vue";
 import axios from "axios";
 
 const headers = [
-  { title: "Select", value: "select" },
   { title: "ID", value: "id" },
   { title: "IP", value: "address" },
   { title: "Status", value: "status" },
@@ -75,9 +54,6 @@ const headers = [
 
 const clients = ref([]);
 const selectedClient = ref(null);
-const command = ref("");
-const output = ref("");
-const waitingForResponse = ref(false);
 const alertMessage = ref("");
 const alertType = ref("success");
 
@@ -92,47 +68,6 @@ function getStatusColor(status) {
     default:
       return "grey";
   }
-}
-
-function toggleSelect(address) {
-  if (selectedClient.value === address) {
-    selectedClient.value = null;
-  } else {
-    selectedClient.value = address;
-  }
-}
-
-function sendCommand() {
-  if (!selectedClient.value || !command.value) return;
-  const client = clients.value.find(
-    (client) => client.address === selectedClient.value
-  );
-  if (client) {
-    client.status = "Executing task...";
-  }
-  waitingForResponse.value = true;
-  axios
-    .post("http://localhost:8000/api/v1/sendCommand", {
-      address: selectedClient.value,
-      command: command.value,
-    })
-    .then((response) => {
-      output.value = response.data.output;
-      if (client) {
-        client.status = "Active"; // or any other status based on the response
-      }
-    })
-    .catch((error) => {
-      console.error("Error sending command:", error);
-      alertMessage.value = "Error sending command: " + error.message;
-      alertType.value = "error";
-      if (client) {
-        client.status = "Active"; // or handle the error status
-      }
-    })
-    .finally(() => {
-      waitingForResponse.value = false;
-    });
 }
 
 let ws;
