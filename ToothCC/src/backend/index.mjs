@@ -195,7 +195,7 @@ function sendCommandToClient(client, command) {
   return new Promise((resolve, reject) => {
     let response = "";
 
-    client.socket.on("data", (data) => {
+    client.socket.on("data", async (data) => {
       response += data.toString();
 
       if (response.endsWith("\n")) {
@@ -207,6 +207,31 @@ function sendCommandToClient(client, command) {
             response = "";
           } else {
             console.log("Received output from client:", jsonResponse.message); // Log the received output
+
+            // Update the database
+            const db = await dbPromise;
+            const result = await db.run(
+              "UPDATE tasks SET output = ?, status = ? WHERE ip = ? AND task = ?",
+              jsonResponse.message,
+              "Completed",
+              client.address,
+              command
+            );
+
+            if (result.changes > 0) {
+              console.log("Database updated successfully.");
+
+              // Broadcast the updated task to all WebSocket clients
+              broadcastTaskUpdate(
+                client.address,
+                command,
+                "Completed",
+                jsonResponse.message
+              );
+            } else {
+              console.error("Failed to update the database.");
+            }
+
             resolve(jsonResponse.message);
           }
         } catch (error) {
@@ -366,6 +391,20 @@ function broadcastClients() {
   wsClients.forEach((ws) => {
     if (ws.readyState === ws.OPEN) {
       ws.send(data);
+    }
+  });
+}
+function broadcastTaskUpdate(ip, task, status, output) {
+  const updatedTask = JSON.stringify({
+    ip,
+    task,
+    status,
+    output,
+  });
+
+  wsClients.forEach((ws) => {
+    if (ws.readyState === ws.OPEN) {
+      ws.send(updatedTask);
     }
   });
 }

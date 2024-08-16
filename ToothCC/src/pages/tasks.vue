@@ -84,7 +84,34 @@ const taskOutput = ref("");
 onMounted(() => {
   fetchTasks();
   fetchClients();
+  setupWebSocket();
 });
+
+function setupWebSocket() {
+  const socket = new WebSocket("ws://localhost:80");
+
+  socket.onmessage = (event) => {
+    const updatedTask = JSON.parse(event.data);
+
+    // Find the task by IP and command (task) and update it
+    const index = tasks.value.findIndex(
+      (task) => task.ip === updatedTask.ip && task.task === updatedTask.task
+    );
+
+    if (index !== -1) {
+      tasks.value[index].status = updatedTask.status;
+      tasks.value[index].output = updatedTask.output;
+    }
+  };
+
+  socket.onclose = () => {
+    console.error("WebSocket connection closed");
+  };
+
+  socket.onerror = (error) => {
+    console.error("WebSocket error:", error);
+  };
+}
 
 function fetchTasks() {
   axios
