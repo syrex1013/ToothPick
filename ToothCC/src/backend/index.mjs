@@ -2,9 +2,7 @@ import express from "express";
 import net from "net";
 import cors from "cors";
 import { WebSocketServer } from "ws";
-import sqlite3 from "sqlite3";
-import { open } from "sqlite";
-import { json } from "stream/consumers";
+import * as db from "./database.mjs";
 
 const apiPort = 8000;
 const wsPort = 80;
@@ -17,41 +15,7 @@ let currentServer = null;
 const clients = [];
 const wsClients = [];
 
-// Initialize SQLite database
-const dbPromise = open({
-  filename: "./toothpick.db",
-  driver: sqlite3.Database,
-});
-
-async function initializeDatabase() {
-  const db = await dbPromise;
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS clients (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      address TEXT,
-      port INTEGER, 
-      lastActivity INTEGER,
-      mode INTEGER
-    )
-  `);
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS listeners (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      port INTEGER
-    )
-  `);
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS tasks (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      ip TEXT,
-      task TEXT,
-      status TEXT,
-      output TEXT
-    )
-  `);
-}
-
-initializeDatabase();
+db.initializeDatabase();
 
 const wss = new WebSocketServer({ port: wsPort });
 
@@ -66,15 +30,13 @@ wss.on("connection", (ws) => {
 });
 
 app.get("/api/v1/tasks", async (_req, res) => {
-  const db = await dbPromise;
-  const rows = await db.all("SELECT * FROM tasks");
+  const rows = await db.getAllTasks();
   res.json(rows);
 });
 
 app.get("/api/v1/tasks/:id", async (req, res) => {
   const { id } = req.params;
-  const db = await dbPromise;
-  const task = await db.get("SELECT * FROM tasks WHERE id = ?", id);
+  const task = await db.getTaskById(id);
   if (task) {
     res.json(task);
   } else {
@@ -84,26 +46,18 @@ app.get("/api/v1/tasks/:id", async (req, res) => {
 
 app.post("/api/v1/tasks", async (req, res) => {
   const { ip, task, status } = req.body;
-  const db = await dbPromise;
-  await db.run(
-    "INSERT INTO tasks (ip, task, status) VALUES (?, ?, ?)",
-    ip,
-    task,
-    status
-  );
+  await db.createTask(ip, task, status);
   res.status(201).json({ message: "Task added successfully" });
 });
 
 app.delete("/api/v1/tasks/:id", async (req, res) => {
   const { id } = req.params;
-  const db = await dbPromise;
-  await db.run("DELETE FROM tasks WHERE id = ?", id);
+  await db.deleteTaskById(id);
   res.status(200).json({ message: "Task deleted successfully" });
 });
 
 app.get("/api/v1/clients", async (_req, res) => {
-  const db = await dbPromise;
-  const rows = await db.all("SELECT address, lastActivity FROM clients");
+  const rows = await db.getClients();
   const now = Date.now();
   const clientList = rows.map((client) => ({
     address: client.address,
@@ -137,22 +91,7 @@ app.post("/api/v1/sendCommand", async (req, res) => {
   try {
     const output = await sendCommandToClient(client, command);
     console.log("Output received, updating database...");
-
-    const db = await dbPromise;
-    const result = await db.run(
-      "UPDATE tasks SET output = ?, status = ? WHERE ip = ? AND task = ?",
-      output,
-      "Completed",
-      address,
-      command
-    );
-
-    if (result.changes > 0) {
-      console.log("Database updated successfully.");
-    } else {
-      console.error("Failed to update the database.");
-    }
-
+    await db.updateTaskOutput(output, "Completed", address, command);
     res.json({ output });
   } catch (error) {
     console.error("Error sending command to client:", error);
@@ -161,34 +100,16 @@ app.post("/api/v1/sendCommand", async (req, res) => {
 });
 
 async function sendPendingTasks(client) {
-  const db = await dbPromise;
-  const pendingTasks = await db.all(
-    "SELECT * FROM tasks WHERE ip = ? AND status = 'Pending'",
-    client.address
-  );
-
+  const pendingTasks = await db.getPendingTasksForIP(client.address);
+  console.log("Sending pending tasks to client:", pendingTasks);
+  console.log("Client address:", client.address);
   for (const task of pendingTasks) {
     try {
       const output = await sendCommandToClient(client, task.task);
-      const result = await db.run(
-        "UPDATE tasks SET output = ?, status = ? WHERE id = ?",
-        output,
-        "Completed",
-        task.id
-      );
-
-      if (result.changes > 0) {
-        console.log(`Task ${task.id} updated with output.`);
-      } else {
-        console.error(`Failed to update task ${task.id}.`);
-      }
+      await db.updateTaskOutputById(output, "Completed", task.id);
     } catch (error) {
       console.error("Failed to send pending task:", error);
-      await db.run(
-        "UPDATE tasks SET status = ? WHERE id = ?",
-        "Failed",
-        task.id
-      );
+      await db.updateTaskStatusById("Failed", task.id);
     }
   }
 }
@@ -211,28 +132,20 @@ function sendCommandToClient(client, command) {
             console.log("Received output from client:", jsonResponse.message); // Log the received output
 
             // Update the database
-            const db = await dbPromise;
-            const result = await db.run(
-              "UPDATE tasks SET output = ?, status = ? WHERE ip = ? AND task = ?",
+            await db.updateTaskOutput(
               jsonResponse.message,
               "Completed",
               client.address,
               command
             );
 
-            if (result.changes > 0) {
-              console.log("Database updated successfully.");
-
-              // Broadcast the updated task to all WebSocket clients
-              broadcastTaskUpdate(
-                client.address,
-                command,
-                "Completed",
-                jsonResponse.message
-              );
-            } else {
-              console.error("Failed to update the database.");
-            }
+            // Broadcast the updated task to all WebSocket clients
+            broadcastTaskUpdate(
+              client.address,
+              command,
+              "Completed",
+              jsonResponse.message
+            );
 
             resolve(jsonResponse.message);
           }
@@ -275,12 +188,7 @@ function closeServerAndClients(callback) {
   }
 }
 async function updateClientModeInDatabase(client, mode) {
-  const db = await dbPromise;
-  await db.run(
-    "UPDATE clients SET mode = ? WHERE address = ?",
-    mode,
-    client.address
-  );
+  await db.updateClientMode(client.address, mode);
 }
 async function startNewServer(port, res) {
   currentServer = net.createServer((socket) => {
@@ -310,7 +218,7 @@ async function startNewServer(port, res) {
 
     console.log("Client connected:", clientAddress);
     broadcastClients();
-    saveClientToDatabase(client);
+    db.saveClientToDatabase(client);
     sendPendingTasks(client); // Send any pending tasks to the client
 
     socket.on("data", (data) => {
@@ -327,7 +235,7 @@ async function startNewServer(port, res) {
         console.error("Failed to parse JSON data:", error);
         return;
       }
-      updateClientActivityInDatabase(client);
+      db.updateClientActivity(client);
       broadcastClients();
     });
 
@@ -352,7 +260,7 @@ async function startNewServer(port, res) {
 
   currentServer.listen(port, async () => {
     console.log(`TCP server listening on port ${port}`);
-    await saveListenerToDatabase(port);
+    await db.saveListener(port);
     res.json({ message: `TCP server started on port ${port}` });
   });
 
@@ -360,45 +268,6 @@ async function startNewServer(port, res) {
     console.error("Server error:", err);
     res.status(500).json({ error: "Failed to start TCP server" });
   });
-}
-
-async function saveClientToDatabase(client) {
-  const db = await dbPromise;
-  const existingClient = await db.get(
-    "SELECT id FROM clients WHERE address = ?",
-    client.address
-  );
-
-  if (existingClient) {
-    await db.run(
-      "UPDATE clients SET port = ?, lastActivity = ? WHERE address = ?",
-      client.port,
-      client.lastActivity,
-      client.address
-    );
-  } else {
-    await db.run(
-      "INSERT INTO clients (address, port, lastActivity) VALUES (?, ?, ?)",
-      client.address,
-      client.port,
-      client.lastActivity
-    );
-  }
-}
-
-async function saveListenerToDatabase(port) {
-  const db = await dbPromise;
-  await db.run("INSERT INTO listeners (port) VALUES (?)", port);
-}
-
-async function updateClientActivityInDatabase(client) {
-  const db = await dbPromise;
-  await db.run(
-    "UPDATE clients SET lastActivity = ?, port = ? WHERE address = ?",
-    client.lastActivity,
-    client.port,
-    client.address
-  );
 }
 
 function broadcastClients() {
