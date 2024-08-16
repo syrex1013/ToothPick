@@ -28,6 +28,7 @@ export async function initializeDatabase() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       ip TEXT,
       task TEXT,
+      parameter TEXT,
       status TEXT,
       output TEXT
     )
@@ -44,13 +45,14 @@ export async function getTaskById(id) {
   return db.get("SELECT * FROM tasks WHERE id = ?", id);
 }
 
-export async function createTask(ip, task, status) {
+export async function createTask(ip, task, status, additionalText) {
   const db = await dbPromise;
   return db.run(
-    "INSERT INTO tasks (ip, task, status) VALUES (?, ?, ?)",
+    "INSERT INTO tasks (ip, task, status, parameter) VALUES (?, ?, ?, ?)",
     ip,
     task,
-    status
+    status,
+    additionalText
   );
 }
 
