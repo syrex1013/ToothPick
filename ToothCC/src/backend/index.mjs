@@ -4,6 +4,7 @@ import cors from "cors";
 import { WebSocketServer } from "ws";
 import sqlite3 from "sqlite3";
 import { open } from "sqlite";
+import { json } from "stream/consumers";
 
 const apiPort = 8000;
 const wsPort = 80;
@@ -29,7 +30,8 @@ async function initializeDatabase() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       address TEXT,
       port INTEGER, 
-      lastActivity INTEGER
+      lastActivity INTEGER,
+      mode INTEGER
     )
   `);
   await db.exec(`
@@ -272,7 +274,14 @@ function closeServerAndClients(callback) {
     callback();
   }
 }
-
+async function updateClientModeInDatabase(client, mode) {
+  const db = await dbPromise;
+  await db.run(
+    "UPDATE clients SET mode = ? WHERE address = ?",
+    mode,
+    client.address
+  );
+}
 async function startNewServer(port, res) {
   currentServer = net.createServer((socket) => {
     let clientIP = socket.remoteAddress;
@@ -307,6 +316,17 @@ async function startNewServer(port, res) {
     socket.on("data", (data) => {
       console.log("Received data:", data.toString());
       client.lastActivity = Date.now();
+      try {
+        data = data.toString().trim();
+        data = JSON.parse(data);
+        if (data.message == "ping") {
+          const mode = data.mode;
+          updateClientModeInDatabase(client, mode);
+        }
+      } catch (error) {
+        console.error("Failed to parse JSON data:", error);
+        return;
+      }
       updateClientActivityInDatabase(client);
       broadcastClients();
     });
