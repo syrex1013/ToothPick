@@ -9,10 +9,17 @@
               {{ item.status }}
             </v-chip>
           </template>
+          <template v-slot:item.actions="{ item }">
+            <v-btn icon @click="viewTaskOutput(item.id)">
+              <v-icon>mdi-eye</v-icon>
+            </v-btn>
+            <v-btn icon @click="deleteTask(item.id)">
+              <v-icon>mdi-delete</v-icon>
+            </v-btn>
+          </template>
         </v-data-table>
       </v-card-text>
     </v-card>
-
     <v-card class="mt-5">
       <v-card-title>Send New Task</v-card-title>
       <v-card-text>
@@ -34,6 +41,24 @@
         </v-form>
       </v-card-text>
     </v-card>
+
+    <!-- Dialog to display task output -->
+    <v-dialog v-model="dialog" max-width="500">
+      <v-card>
+        <v-card-title>Task Output</v-card-title>
+        <v-card-text>
+          <v-textarea
+            v-model="taskOutput"
+            readonly
+            rows="10"
+            label="Output"
+          ></v-textarea>
+        </v-card-text>
+        <v-card-actions>
+          <v-btn color="primary" @click="dialog = false">Close</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </v-container>
 </template>
 
@@ -44,44 +69,50 @@ import axios from "axios";
 const headers = [
   { title: "ID", value: "id" },
   { title: "IP", value: "ip" },
-  { title: "Task Status", value: "status" },
-  { title: "Task data", value: "task" },
+  { title: "Task", value: "task" },
+  { title: "Status", value: "status" },
+  { title: "Actions", value: "actions", sortable: false },
 ];
 
-const tasks = ref([
-  { id: 1, ip: "192.168.1.1", status: "Active", task: "Task 1" },
-  { id: 2, ip: "192.168.1.2", status: "Inactive", task: "Task 2" },
-  { id: 3, ip: "192.168.1.3", status: "Active", task: "Task 3" },
-  { id: 4, ip: "192.168.1.4", status: "Pending", task: "Task 4" },
-]);
-
-const newTask = ref({
-  task: "",
-});
-
+const tasks = ref([]);
 const clients = ref([]);
 const selectedClient = ref(null);
+const newTask = ref({ task: "" });
+const dialog = ref(false);
+const taskOutput = ref("");
 
 onMounted(() => {
+  fetchTasks();
+  fetchClients();
+});
+
+function fetchTasks() {
+  axios
+    .get("http://localhost:8000/api/v1/tasks")
+    .then((response) => {
+      tasks.value = response.data;
+    })
+    .catch((error) => {
+      console.error("Error fetching tasks:", error);
+    });
+}
+
+function fetchClients() {
   axios
     .get("http://localhost:8000/api/v1/clients")
-    // .then((response) => {
-    //   clients.value = response.data.map(
-    //     (client, index) => `Client ${index} - ${client.address}`
-    //   );
     .then((response) => {
-      clients.value = response.data.map((client, index) => client.address);
+      clients.value = response.data.map((client) => client.address);
     })
     .catch((error) => {
       console.error("Error fetching clients:", error);
     });
-});
+}
 
 function getStatusColor(status) {
   switch (status) {
-    case "Active":
+    case "Completed":
       return "green";
-    case "Inactive":
+    case "Failed":
       return "red";
     case "Pending":
       return "orange";
@@ -92,23 +123,46 @@ function getStatusColor(status) {
 
 function sendTask() {
   if (selectedClient.value && newTask.value.task) {
-    // Add the new task to the tasks array
-    tasks.value.push({
-      id: tasks.value.length + 1,
+    const task = {
       ip: selectedClient.value,
-      status: "Pending",
       task: newTask.value.task,
-    });
+      status: "Pending",
+    };
 
-    // Send message (task) to client
-    axios.post("http://localhost:8000/api/v1/sendCommand", {
-      address: selectedClient.value,
-      command: newTask.value.task,
-    });
-    // Clear the form
-    selectedClient.value = null;
-    newTask.value.task = "";
+    axios
+      .post("http://localhost:8000/api/v1/tasks", task)
+      .then(() => {
+        fetchTasks();
+        newTask.value.task = "";
+        selectedClient.value = null;
+      })
+      .catch((error) => {
+        console.error("Error sending task:", error);
+      });
   }
+}
+
+function deleteTask(id) {
+  axios
+    .delete(`http://localhost:8000/api/v1/tasks/${id}`)
+    .then(() => {
+      fetchTasks();
+    })
+    .catch((error) => {
+      console.error("Error deleting task:", error);
+    });
+}
+
+function viewTaskOutput(id) {
+  axios
+    .get(`http://localhost:8000/api/v1/tasks/${id}`)
+    .then((response) => {
+      taskOutput.value = response.data.output || "No output available";
+      dialog.value = true;
+    })
+    .catch((error) => {
+      console.error("Error fetching task output:", error);
+    });
 }
 </script>
 
