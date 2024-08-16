@@ -243,9 +243,9 @@ async function startNewServer(port, res) {
 
     socket.on("error", (err) => {
       console.error("Socket error:", err);
-      const index = clients.indexOf(client);
-      if (index !== -1) {
-        clients.splice(index, 1);
+      const client = clients.find((c) => c.address === clientIP);
+      if (client) {
+        client.status = "Offline";
       }
       broadcastClients(clients);
     });

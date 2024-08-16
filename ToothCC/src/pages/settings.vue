@@ -29,6 +29,7 @@
 import { ref } from "vue";
 import { useRouter } from "vue-router";
 import axios from "axios";
+import { store } from "../store";
 
 const listeningPort = ref("");
 const router = useRouter();
@@ -47,6 +48,7 @@ function startListening(port) {
     .then((response) => {
       alertMessage.value = `Server started on port ${port}`;
       alertType.value = "success";
+      store.currentPort = port; // Update the global state
     })
     .catch((error) => {
       alertMessage.value = "Error starting server: " + error.message;

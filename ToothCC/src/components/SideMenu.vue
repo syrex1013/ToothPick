@@ -2,6 +2,8 @@
   <v-app-bar app>
     <v-app-bar-nav-icon @click="toggleDrawer" />
     <v-toolbar-title>TOOTHPICK Admin</v-toolbar-title>
+    <v-spacer></v-spacer>
+    <span class="pa-2">Current Port: {{ store.currentPort }}</span>
   </v-app-bar>
 
   <v-navigation-drawer app fixed v-model="drawer" class="pa-4">
@@ -41,6 +43,7 @@
 <script setup>
 import { ref } from "vue";
 import { useRouter } from "vue-router";
+import { store } from "../store";
 
 const drawer = ref(true);
 const router = useRouter();
